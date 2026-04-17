@@ -15,6 +15,7 @@
 static EventGroupHandle_t s_wifi_event_group;
 #define WIFI_CONNECTED_BIT BIT0
 #define MQTT_CONNECTED_BIT BIT1
+#define MQTT_PUBLISHED_BIT BIT2
 
 static const char *TAG = "WIFI6_TWT_LOGGER";
 
@@ -92,16 +93,18 @@ void mqtt_sensor_task(void *pvParameters) {
         sprintf(payload, "{\"humidity\": %d}", dummy_humidity);
 
         ESP_LOGI(TAG, "Publishing to HiveMQ: %s", payload);
+        
+        // Clear the old flag before publishing
+        xEventGroupClearBits(s_wifi_event_group, MQTT_PUBLISHED_BIT); 
+        
         esp_mqtt_client_publish(client, "portfolio/c6/sensor", payload, 0, 1, 0);
+
+        // --- THE FIX: Wait for the delivery receipt before sleeping! ---
+        xEventGroupWaitBits(s_wifi_event_group, MQTT_PUBLISHED_BIT, pdFALSE, pdTRUE, portMAX_DELAY);
 
         ESP_LOGI(TAG, "Task sleeping for 15 seconds. Yielding to Light Sleep...");
         
-        // -------------------------------------------------------------
-        // By calling vTaskDelay, we give the CPU back to FreeRTOS.
-        // Because no other tasks are running, the Idle Task takes over.
-        // The PM subsystem sees the Idle Task and INSTANTLY drops the 
-        // CPU and Wi-Fi modem into Light Sleep for exactly 15 seconds.
-        // -------------------------------------------------------------
+        // NOW it is safe to sleep!
         vTaskDelay(pdMS_TO_TICKS(15000)); 
     }
 }
@@ -114,13 +117,14 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
     switch ((esp_mqtt_event_id_t)event_id) {
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "=== MQTT CONNECTED TO HIVEMQ ===");
-            xEventGroupSetBits(s_wifi_event_group, MQTT_CONNECTED_BIT); // <-- Signal the system!
+            xEventGroupSetBits(s_wifi_event_group, MQTT_CONNECTED_BIT);
             break;
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGW(TAG, "=== MQTT DISCONNECTED ===");
             break;
         case MQTT_EVENT_PUBLISHED:
             ESP_LOGI(TAG, "=== MQTT MESSAGE SUCCESSFULLY PUBLISHED ===");
+            xEventGroupSetBits(s_wifi_event_group, MQTT_PUBLISHED_BIT);
             break;
         default:
             break;

@@ -94,17 +94,17 @@ void mqtt_sensor_task(void *pvParameters) {
 
         ESP_LOGI(TAG, "Publishing to HiveMQ: %s", payload);
         
-        // Clear the old flag before publishing
-        xEventGroupClearBits(s_wifi_event_group, MQTT_PUBLISHED_BIT); 
-        
-        esp_mqtt_client_publish(client, "portfolio/c6/sensor", payload, 0, 1, 0);
+        // 1. CHANGE QoS FROM 1 to 0 (The second-to-last parameter)
+        // esp_mqtt_client_publish(client, topic, data, len, qos, retain);
+        esp_mqtt_client_publish(client, "portfolio/c6/sensor", payload, 0, 0, 0);
 
-        // --- THE FIX: Wait for the delivery receipt before sleeping! ---
-        xEventGroupWaitBits(s_wifi_event_group, MQTT_PUBLISHED_BIT, pdFALSE, pdTRUE, portMAX_DELAY);
+        // 2. COMMENT OUT THE WAIT BLOCK
+        // We no longer wait for a delivery receipt. 
+        // xEventGroupWaitBits(s_wifi_event_group, MQTT_PUBLISHED_BIT, pdFALSE, pdTRUE, portMAX_DELAY);
 
         ESP_LOGI(TAG, "Task sleeping for 15 seconds. Yielding to Light Sleep...");
         
-        // NOW it is safe to sleep!
+        // 3. Immediately hit the sleep timer
         vTaskDelay(pdMS_TO_TICKS(15000)); 
     }
 }
